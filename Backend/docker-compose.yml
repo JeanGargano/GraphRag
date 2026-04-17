@@ -1,0 +1,43 @@
+services:
+  qdrant:
+    image: qdrant/qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  orchestrator_service:
+    build:
+      context: ./Orchestrator_Service
+      dockerfile: Dockerfile
+    environment:
+      DOCUMENT_SERVICE_URL: http://document_service:8001
+    ports:
+      - "8000:8000"
+
+  document_service:
+    build:
+      context: ./Document_Service
+      dockerfile: Dockerfile
+    environment:
+      EMBEDDING_SERVICE_URL: http://embedding_service:8002
+    ports:
+      - "8001:8001"
+    depends_on:
+      - orchestrator_service
+
+  embedding_service:
+    build:
+      context: ./Embedding_Service
+      dockerfile: Dockerfile
+    environment:
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+    ports:
+      - "8002:8002"
+    depends_on:
+      - qdrant
+
+
+volumes:
+  qdrant_data:
