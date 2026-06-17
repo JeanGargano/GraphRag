@@ -58,8 +58,15 @@ async def lifespan(app: FastAPI):
         fastembed_client=embedding_provider,
     )
 
-    # Módulo Indexer
-    ner_provider = SpacyNERProvider(model_name=settings.spacy_model)
+    # Módulo Indexer (NER Provider)
+    if settings.groq_api_key:
+        from indexer_Service.Infra.LLM_NER_Client import LLMNERProvider
+        ner_provider = LLMNERProvider(api_key=settings.groq_api_key)
+        logger.info("Usando LLMNERProvider (Groq) para extracción de entidades")
+    else:
+        logger.warning("No se proporcionó groq_api_key. Usando SpacyNERProvider como fallback.")
+        ner_provider = SpacyNERProvider(model_name=settings.spacy_model)
+
     indexer_repo = GraphRepository(driver=neo4j)
     indexer_service = IndexerService(
         graph_repository=indexer_repo,

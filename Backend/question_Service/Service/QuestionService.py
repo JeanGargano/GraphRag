@@ -52,7 +52,7 @@ class QuestionService:
         # 2. Búsqueda en Grafo (Neo4j)
         try:
             logger.info("Extrayendo entidades de la pregunta con spaCy...")
-            entities_tuples = self._spacy.extract(request.query)
+            entities_tuples = await self._spacy.extract(request.query)
             entities_list = [e[0] for e in entities_tuples]
             logger.info(f"Entidades detectadas: {entities_list}")
             

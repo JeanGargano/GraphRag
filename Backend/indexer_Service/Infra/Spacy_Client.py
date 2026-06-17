@@ -7,8 +7,8 @@ logger = logging.getLogger(__name__)
 class INERProvider(ABC):
 
     @abstractmethod
-    def extract(self, text: str) -> list[tuple[str, str]]:
-        """Retorna lista de (texto_entidad, tipo_entidad)."""
+    async def extract(self, text: str) -> dict:
+        """Retorna un diccionario con estructura {"entities": [...], "relations": [...]}."""
         ...
 
 
@@ -27,6 +27,20 @@ class SpacyNERProvider(INERProvider):
         except ImportError as exc:
             raise RuntimeError("Instala spaCy: pip install spacy") from exc
 
-    def extract(self, text: str) -> list[tuple[str, str]]:
+    async def extract(self, text: str) -> dict:
         doc = self._nlp(text)
-        return [(ent.text.strip(), ent.label_) for ent in doc.ents if ent.text.strip()]
+        entities = []
+        for ent in doc.ents:
+            if ent.text.strip():
+                # spaCy genérico no tiene mapeo a atributos complejos de la ontología,
+                # mapeamos texto y tipo de manera básica.
+                entities.append({
+                    "type": ent.label_,
+                    "properties": {
+                        "text": ent.text.strip()
+                    }
+                })
+        return {
+            "entities": entities,
+            "relations": []
+        }

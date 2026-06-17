@@ -32,6 +32,9 @@ class IndexerService(IIndexerService):
             filename=request.filename,
         )
 
+        total_entities = 0
+        total_relations = 0
+
         # 2. Procesar cada chunk
         for chunk in request.chunks:
             # Crear nodo Chunk + relación HAS_CHUNK
@@ -42,16 +45,37 @@ class IndexerService(IIndexerService):
                 text=chunk.text,
             )
 
-            # Extraer entidades y crear relaciones MENTIONS
-            entities = self._spacy.extract(chunk.text)
-            for entity in entities:
-                self._repo.upsert_entity_and_link(
+            # Extraer entidades y relaciones desde el LLM
+            extraction_result = await self._spacy.extract(chunk.text)
+            extracted_entities = extraction_result.get("entities", [])
+            extracted_relations = extraction_result.get("relations", [])
+
+            # Indexar entidades
+            for ent in extracted_entities:
+                ent_type = ent.get("type")
+                properties = ent.get("properties", {})
+                self._repo.upsert_custom_entity_and_link(
                     chunk_id=chunk.chunk_id,
-                    entity_text=entity[0],
-                    entity_label=entity[1],
+                    entity_type=ent_type,
+                    properties=properties,
                 )
-            total_entities += len(entities)
-            logger.debug("Chunk %d: %d entidades", chunk.chunk_index, len(entities))
+            
+            # Indexar relaciones directas entre entidades
+            for rel in extracted_relations:
+                source = rel.get("source")
+                target = rel.get("target")
+                rel_type = rel.get("type")
+                properties = rel.get("properties", {})
+                self._repo.upsert_custom_relation(
+                    source=source,
+                    target=target,
+                    rel_type=rel_type,
+                    properties=properties,
+                )
+
+            total_entities += len(extracted_entities)
+            total_relations += len(extracted_relations)
+            logger.debug("Chunk %d: %d entidades, %d relaciones", chunk.chunk_index, len(extracted_entities), len(extracted_relations))
 
         # 3. Crear relaciones NEXT_CHUNK entre chunks consecutivos
         sorted_chunks = sorted(request.chunks, key=lambda c: c.chunk_index)
@@ -62,9 +86,10 @@ class IndexerService(IIndexerService):
             )
 
         logger.info(
-            "Grafo indexado: %d chunks, %d entidades",
+            "Grafo indexado: %d chunks, %d entidades, %d relaciones de ontología creadas",
             len(request.chunks),
             total_entities,
+            total_relations,
         )
 
         return IndexerResponse(
