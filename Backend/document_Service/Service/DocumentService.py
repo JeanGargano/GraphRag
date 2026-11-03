@@ -1,11 +1,12 @@
 import logging
 import uuid
 import asyncio
-from typing import List
 
-from fastapi import HTTPException, status
-
-from Config import settings
+from DomainExceptions import (
+    EmptyDocumentError,
+    MissingFileExtensionError,
+    UnsupportedFileTypeError,
+)
 from document_Service.Model.Schemas import DocumentUploadResponse
 from embedding_Service.Model.Schemas import IndexRequest
 from indexer_Service.Model.Schemas import (
@@ -49,39 +50,30 @@ class DocumentService(IDocumentService):
         content_type: str | None,
         file_content: bytes,
     ) -> DocumentUploadResponse:
-        # 1. Obtener extensión y validar
         extension = self._get_extension(filename)
         strategy = STRATEGIES.get(extension)
         if not strategy:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=f"Tipo de archivo '{extension}' no soportado.",
-            )
+            raise UnsupportedFileTypeError(extension)
 
-        # 2. Guardar archivo y generar ID
         document_id = str(uuid.uuid4())
-        file_path = await self.save_file(
+        file_path = await self._save_file(
             filename=filename,
             file_content=file_content,
             document_id=document_id,
         )
         logger.info("Archivo guardado en: %s", file_path)
 
-        # 3. Extraer texto
-        content = strategy.extract_content(file_path)
+        content = await asyncio.to_thread(strategy.extract_content, file_path)
         if not content:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="No se pudo extraer texto del documento.",
-            )
+            raise EmptyDocumentError()
         logger.info("Texto extraído: %d caracteres", len(content))
 
-        # 4. Dividir en chunks
-        chunks = self._chunk_content(content)
+        chunks = self._embedding_service.split_into_chunks(content)
+        if not chunks:
+            raise EmptyDocumentError()
         logger.info("Chunks generados: %d", len(chunks))
 
-        # 5. Enviar al embedding e indexer
-        await self.send_chunks(
+        await self._send_chunks(
             document_id=document_id,
             filename=filename,
             chunks=chunks,
@@ -93,15 +85,14 @@ class DocumentService(IDocumentService):
             document_id=document_id,
         )
 
-    async def save_file(self, filename: str, file_content: bytes, document_id: str) -> str:
-        file_path = await self._document_repo.save_file(
+    async def _save_file(self, filename: str, file_content: bytes, document_id: str) -> str:
+        return await self._document_repo.save_file(
             filename=filename,
             file_content=file_content,
             document_id=document_id,
         )
-        return file_path
 
-    async def send_chunks(self, document_id: str, filename: str, chunks: list[str]) -> None:
+    async def _send_chunks(self, document_id: str, filename: str, chunks: list[str]) -> None:
         chunk_ids = [f"{document_id}-{index:04d}" for index in range(len(chunks))]
 
         embedding_task = self._embedding_service.save_embeddings(
@@ -129,28 +120,11 @@ class DocumentService(IDocumentService):
                 chunks=indexer_chunks,
             )
         )
-        await asyncio.gather(
-            embedding_task,
-            indexer_task,
-        )
-
-    def _chunk_content(self, content: str) -> List[str]:
-        size = settings.chunk_size
-        overlap = settings.chunk_overlap
-        chunks = []
-        start = 0
-        while start < len(content):
-            end = start + size
-            chunks.append(content[start:end])
-            start += size - overlap
-        return chunks
+        await asyncio.gather(embedding_task, indexer_task)
 
     @staticmethod
     def _get_extension(filename: str) -> str:
         parts = filename.rsplit(".", 1)
         if len(parts) < 2:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El archivo no tiene extensión.",
-            )
+            raise MissingFileExtensionError()
         return parts[1].lower()

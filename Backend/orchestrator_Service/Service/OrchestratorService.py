@@ -1,16 +1,22 @@
 import logging
 
+from DomainExceptions import QuestionServiceUnavailableError
 from document_Service.Model.Schemas import DocumentUploadResponse
-from orchestrator_Service.Service.IOrchestratorService import IOrchestratorService
 from document_Service.Service.IDocumentService import IDocumentService
-from question_Service.Service.QuestionService import QuestionService
+from orchestrator_Service.Service.IOrchestratorService import IOrchestratorService
 from question_Service.Model.Schemas import QuestionRequest, QuestionResponse
+from question_Service.Service.IQuestionService import IQuestionService
+
 logger = logging.getLogger(__name__)
 
 
 class OrchestratorService(IOrchestratorService):
 
-    def __init__(self, document_service: IDocumentService, question_service: QuestionService = None):
+    def __init__(
+        self,
+        document_service: IDocumentService,
+        question_service: IQuestionService | None = None,
+    ):
         self._document_service = document_service
         self._question_service = question_service
 
@@ -32,6 +38,5 @@ class OrchestratorService(IOrchestratorService):
     async def ask_question(self, request: QuestionRequest) -> QuestionResponse:
         logger.info("Orquestando pregunta...")
         if not self._question_service:
-            raise Exception("QuestionService no inyectado")
+            raise QuestionServiceUnavailableError()
         return await self._question_service.ask_question(request)
-

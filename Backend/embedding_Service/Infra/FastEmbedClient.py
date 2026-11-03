@@ -18,25 +18,28 @@ class FastEmbedClient:
     def count_tokens(self, text: str) -> int:
         return len(self._tokenizer.encode(text).ids)
 
-    def validate_chunks(self, chunks: list[str]) -> list[str]:
+    def split_into_chunks(self, text: str, chunk_size: int, overlap: int) -> list[str]:
         """
-        Descarta chunks que superen el límite de tokens del modelo.
+        Parte el texto en ventanas de tokens. Cada chunk tiene como máximo
+        min(chunk_size, max_tokens) tokens.
         """
-        valid = []
-        for i, chunk in enumerate(chunks):
-            token_count = self.count_tokens(chunk)
-            if token_count > self._max_tokens:
-                logger.warning(
-                    "Chunk %d descartado: %d tokens (máx %d)",
-                    i, token_count, self._max_tokens,
-                )
-            else:
-                logger.debug("Chunk %d OK: %d tokens", i, token_count)
-                valid.append(chunk)
-        return valid
+        window = min(chunk_size, self._max_tokens)
+        token_overlap = min(overlap, window - 1) if window > 1 else 0
+        ids = self._tokenizer.encode(text).ids
+        if not ids:
+            return []
+
+        chunks: list[str] = []
+        start = 0
+        while start < len(ids):
+            end = min(start + window, len(ids))
+            piece = self._tokenizer.decode(ids[start:end]).strip()
+            if piece:
+                chunks.append(piece)
+            if end >= len(ids):
+                break
+            start += window - token_overlap
+        return chunks
 
     def embed(self, chunks: list[str]) -> list[list[float]]:
-        """
-        Tokeniza internamente y genera el vector para cada chunk.
-        """
         return [e.tolist() for e in self._model.embed(chunks)]

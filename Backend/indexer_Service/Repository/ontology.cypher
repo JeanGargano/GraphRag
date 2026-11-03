@@ -1,3 +1,7 @@
+// Documentación del esquema de ontología UAO.
+// NO ejecutar en el arranque: GraphRepository solo aplica constraints.
+// Este archivo es referencia del modelo (nodos, atributos y relaciones).
+
 // Creación de Nodos con sus atributos
 CREATE (`resolución`:`Resolución` {
     `titulo_resolucion`: "Lorem",

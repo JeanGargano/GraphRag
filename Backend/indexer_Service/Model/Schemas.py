@@ -18,3 +18,10 @@ class IndexerResponse(BaseModel):
     document_id: str
     chunks_processed: int
     entities_found: int
+
+
+class GraphSearchHit(BaseModel):
+    chunk_id: str
+    text: str
+    document_id: str | None = None
+    matched_entity: str | None = None

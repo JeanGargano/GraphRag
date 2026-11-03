@@ -1,8 +1,10 @@
-import os
 import logging
+import re
 from neo4j import Driver
 
 logger = logging.getLogger(__name__)
+
+_SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 ONTOLOGY_MAP = {
@@ -17,47 +19,45 @@ ONTOLOGY_MAP = {
     "tiempo": {"label": "Tiempo", "key": "descripcion"},
 }
 
+ALLOWED_ENTITY_PROPS = {
+    "titulo_resolucion", "estado_actual", "numero", "fecha", "nivel",
+    "nombre_modalidad", "descripcion", "num_max_estudiantes", "articulo",
+    "tipo_requisito", "plan_academico", "valor_minimo",
+    "nombre_etapa", "orden", "plataforma_asociada",
+    "nombre_rol", "correo_contacto", "tipo_actor",
+    "nombre", "identificador", "tipo", "url", "estado",
+    "nombre_programa", "planes_vigentes",
+    "nombre_facultad",
+    "fechaLimite",
+    "text",
+}
+
+ALLOWED_REL_PROPS = {
+    "tipo_aprobacion", "tiempo_respuesta", "nota_requerida",
+    "momento_exigencia", "condicion_especial", "es_obligatorio",
+    "fecha_inscripcion", "estado_solicitud", "orden_etapa",
+    "articulo_aplicable", "tipo_documento", "tiempo_maximo_etapa",
+    "aplica_plan_estudio", "nivel_resolucion", "periodo_academico",
+    "resolucion_aprobacion",
+}
+
+ALLOWED_RELS = {
+    "ADMINISTRA", "TIENE_COMO_APOYO", "OFRECE", "TIENE_REQUISITOS",
+    "CONSTA_DE_ETAPA", "APLICA_A", "REQUIERE_DE", "ES_PRERREQUISITO_DE",
+    "DEBE_CUMPLIR", "REQUIERE_APROBACION_DE", "SOPORTADO_EN", "VINCULADO_A",
+    "ASOCIADO_A", "SE_RIGE_POR",
+}
+
+
+def _safe_prop(name: str, allowed: set[str]) -> bool:
+    return name in allowed and bool(_SAFE_IDENT.match(name))
+
 
 class GraphRepository:
 
     def __init__(self, driver: Driver):
         self._driver = driver
         self._create_constraints()
-        self._apply_ontology()
-
-    def _apply_ontology(self) -> None:
-        """
-        Lee y ejecuta el archivo de ontología (ontology.cypher) si existe en este directorio.
-        """
-        ontology_path = os.path.join(os.path.dirname(__file__), "ontology.cypher")
-        if not os.path.exists(ontology_path):
-            logger.info("No se encontró archivo de ontología en %s, saltando.", ontology_path)
-            return
-
-        logger.info("Cargando ontología desde %s", ontology_path)
-        try:
-            with open(ontology_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            
-            # Parser básico: separar por ';' y omitir comentarios
-            queries = []
-            for query in content.split(";"):
-                clean_lines = []
-                for line in query.splitlines():
-                    striped_line = line.strip()
-                    if striped_line.startswith("//") or not striped_line:
-                        continue
-                    clean_lines.append(line)
-                clean_query = "\n".join(clean_lines).strip()
-                if clean_query:
-                    queries.append(clean_query)
-
-            with self._driver.session() as session:
-                for q in queries:
-                    session.run(q)
-            logger.info("Ontología aplicada correctamente en Neo4j (%d consultas ejecutadas)", len(queries))
-        except Exception as e:
-            logger.error("Error al aplicar la ontología: %s", e)
 
     def _create_constraints(self) -> None:
         """
@@ -156,6 +156,10 @@ class GraphRepository:
         """
         Inserta una entidad con múltiples propiedades de la ontología y la asocia al Chunk.
         """
+        properties = properties or {}
+        if not entity_type:
+            logger.warning("Tipo de entidad vacío. Omitiendo.")
+            return
         info = ONTOLOGY_MAP.get(entity_type.lower())
         if not info:
             logger.warning("Tipo de entidad '%s' no mapeado en la ontología. Omitiendo.", entity_type)
@@ -175,14 +179,15 @@ class GraphRepository:
                 return
             properties[key] = key_value
 
-        # Construir set query de propiedades dinámicamente, omitiendo valores nulos
         set_statements = []
         params = {"key_value": key_value, "chunk_id": chunk_id}
-        
+
         for k, v in properties.items():
             if k == key:
                 continue
-            # Guardamos con valores nulos como null explícito
+            if not _safe_prop(k, ALLOWED_ENTITY_PROPS):
+                logger.warning("Propiedad de entidad omitida (no permitida): %s", k)
+                continue
             set_statements.append(f"e.{k} = ${k}")
             params[k] = v
 
@@ -211,6 +216,11 @@ class GraphRepository:
         """
         Crea una relación directa entre dos nodos de la ontología basándose en sus atributos clave únicos.
         """
+        properties = properties or {}
+        if not isinstance(source, dict) or not isinstance(target, dict) or not rel_type:
+            logger.warning("Relación omitida: source/target/type inválidos.")
+            return
+
         source_type = source.get("type", "")
         target_type = target.get("type", "")
         
@@ -246,20 +256,16 @@ class GraphRepository:
         set_statements = []
         params = {"source_val": source_value, "target_val": target_value}
         for k, v in properties.items():
+            if not _safe_prop(k, ALLOWED_REL_PROPS):
+                logger.warning("Propiedad de relación omitida (no permitida): %s", k)
+                continue
             set_statements.append(f"r.{k} = ${k}")
             params[k] = v
 
         set_clause = "SET " + ", ".join(set_statements) if set_statements else ""
-        
-        # Validar tipo de relación seguro para evitar Cypher Injections
-        allowed_rels = {
-            "ADMINISTRA", "TIENE_COMO_APOYO", "OFRECE", "TIENE_REQUISITOS",
-            "CONSTA_DE_ETAPA", "APLICA_A", "REQUIERE_DE", "ES_PRERREQUISITO_DE",
-            "DEBE_CUMPLIR", "REQUIERE_APROBACION_DE", "SOPORTADO_EN", "VINCULADO_A"
-        }
-        
+
         clean_rel_type = rel_type.strip().upper()
-        if clean_rel_type not in allowed_rels:
+        if clean_rel_type not in ALLOWED_RELS:
             logger.warning("Relación '%s' no permitida por seguridad o no pertenece a la ontología. Omitiendo.", rel_type)
             return
 
@@ -317,4 +323,4 @@ class GraphRepository:
             return [record.data() for record in result]
 
 
-
+

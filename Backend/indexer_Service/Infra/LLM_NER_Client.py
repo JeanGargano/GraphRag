@@ -6,7 +6,7 @@ from indexer_Service.Infra.Spacy_Client import INERProvider
 logger = logging.getLogger(__name__)
 
 class LLMNERProvider(INERProvider):
-    def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", model: str = "llama-3.1-8b-instant"): 
+    def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", model: str = "openai/gpt-oss-120b"): 
         if not api_key:
             raise ValueError("API Key no configurada para el LLM de NER")
             

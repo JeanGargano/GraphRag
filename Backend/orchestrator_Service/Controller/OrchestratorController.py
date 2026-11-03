@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
 
-from orchestrator_Service.Model.Schemas import DocumentUploadResponse
+from document_Service.Model.Schemas import DocumentUploadResponse
 from question_Service.Model.Schemas import QuestionRequest, QuestionResponse
 from orchestrator_Service.Security.File_Validator import validate_file
 from orchestrator_Service.Service.IOrchestratorService import IOrchestratorService
@@ -16,9 +16,6 @@ def get_orchestrator_service(request: Request) -> IOrchestratorService:
     return request.app.state.orchestrator_service
 
 
-
-# ── Ingesta de documentos ──────────────────────────────────
-
 @router.post(
     "/orchestrator/upload",
     response_model=DocumentUploadResponse,
@@ -30,7 +27,6 @@ async def upload_document(
     file: UploadFile = File(..., description="Archivo a ingestar (pdf, docx, txt)"),
     service: IOrchestratorService = Depends(get_orchestrator_service),
 ):
-
     file_content = await validate_file(file)
 
     return await service.send_document(
@@ -39,7 +35,6 @@ async def upload_document(
         file_content=file_content,
     )
 
-# ── Preguntas (Hybrid Retrieval) ───────────────────────────
 
 @router.post(
     "/orchestrator/ask",
@@ -53,4 +48,3 @@ async def ask_question(
     service: IOrchestratorService = Depends(get_orchestrator_service),
 ):
     return await service.ask_question(request)
-

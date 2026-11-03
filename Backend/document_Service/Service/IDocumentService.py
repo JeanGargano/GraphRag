@@ -12,26 +12,7 @@ class IDocumentService(ABC):
         file_content: bytes,
     ) -> DocumentUploadResponse:
         """
-        Orquesta el flujo completo:
-        1. Guarda el archivo y genera su ID
-        2. Extrae el texto según el tipo
-        3. Divide en chunks
-        4. Envía chunks al Embedding Service e Indexer Service
-        5. Retorna el ID del documento y mensaje de éxito
-        """
-        pass
-
-    @abstractmethod
-    async def save_file(self, filename: str, file_content: bytes, document_id: str) -> str:
-        """
-        Guarda el archivo físico en el sistema de archivos.
-        Retorna la ruta donde se guardó el archivo.
-        """
-        pass
-
-    @abstractmethod
-    async def send_chunks(self, document_id: str, filename: str, chunks: list[str]) -> None:
-        """
-        Envía los chunks al Embedding Service.
+        Ingesta un documento: guarda, extrae, divide en chunks
+        e indexa el mismo conjunto en embeddings y grafo.
         """
         pass

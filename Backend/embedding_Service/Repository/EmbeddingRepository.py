@@ -12,7 +12,7 @@ class EmbeddingRepository:
     def __init__(self, client: QdrantClient, collection_name: str, vector_size: int):
         self._client = client
         self._collection_name = collection_name
-        self._ensure_collection(vector_size) 
+        self._ensure_collection(vector_size)
 
     def _ensure_collection(self, vector_size: int) -> None:
         existing = [c.name for c in self._client.get_collections().collections]
@@ -28,9 +28,6 @@ class EmbeddingRepository:
         else:
             logger.info("Colección '%s' ya existe", self._collection_name)
 
-    def ensure_collection(self, vector_size: int) -> None:
-        self._ensure_collection(vector_size)
-
     def upsert_points(
         self,
         document_id: str,
@@ -41,7 +38,7 @@ class EmbeddingRepository:
     ) -> None:
         points = [
             PointStruct(
-                id=str(uuid.uuid4()),
+                id=str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id)),
                 vector=vector,
                 payload={
                     "document_id": document_id,
@@ -60,17 +57,13 @@ class EmbeddingRepository:
         logger.info("Upsert de %d puntos", len(points))
 
     def search_vectors(self, query_vector: list[float], limit: int = 5) -> list[dict]:
-        """
-        Realiza la búsqueda vectorial en Qdrant utilizando la configuración HNSW.
-        """
         search_params = ANNSearchHelper.get_hnsw_search_params(ef_search=128)
-        
+
         results = self._client.search(
             collection_name=self._collection_name,
             query_vector=query_vector,
             limit=limit,
             search_params=search_params,
         )
-        
-        # Devolver solo los payloads y opcionalmente el score (similitud)
-        return [{"score": hit.score, **hit.payload} for hit in results]
+
+        return [{"score": hit.score, **hit.payload} for hit in results]

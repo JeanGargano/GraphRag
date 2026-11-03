@@ -1,7 +1,10 @@
+import asyncio
 import logging
-from fastapi import HTTPException, status
-from embedding_Service.Model.Schemas import IndexRequest, IndexResponse
+
+from Config import settings
+from DomainExceptions import NoValidChunksError
 from embedding_Service.Infra.FastEmbedClient import FastEmbedClient
+from embedding_Service.Model.Schemas import IndexRequest, IndexResponse, SearchHit
 from embedding_Service.Repository.EmbeddingRepository import EmbeddingRepository
 from embedding_Service.Service.IEmbeddingService import IEmbeddingService
 
@@ -18,6 +21,13 @@ class EmbeddingService(IEmbeddingService):
         self._repo = embedding_repository
         self._fastembed = fastembed_client
 
+    def split_into_chunks(self, content: str) -> list[str]:
+        return self._fastembed.split_into_chunks(
+            content,
+            chunk_size=settings.chunk_size,
+            overlap=settings.chunk_overlap,
+        )
+
     async def save_embeddings(self, request: IndexRequest) -> IndexResponse:
         logger.info(
             "Procesando documento '%s' | %d chunks recibidos",
@@ -26,25 +36,27 @@ class EmbeddingService(IEmbeddingService):
         )
 
         if not request.chunks:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No se recibieron chunks para indexar.",
-            )
+            raise NoValidChunksError("No se recibieron chunks para indexar.")
 
-        # 1. Validar que los chunks no superen el límite de tokens del modelo
         valid_indices = [
             i for i, chunk in enumerate(request.chunks)
             if self._fastembed.count_tokens(chunk) <= self._fastembed._max_tokens
         ]
 
         if not valid_indices:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Todos los chunks superan el límite de tokens del modelo.",
+            raise NoValidChunksError(
+                "Todos los chunks superan el límite de tokens del modelo."
             )
 
         valid_chunks = [request.chunks[i] for i in valid_indices]
         valid_ids = [request.chunk_ids[i] for i in valid_indices]
+        discarded = len(request.chunks) - len(valid_chunks)
+
+        if discarded:
+            logger.warning(
+                "%d chunks descartados por límite de tokens; no deberían llegar aquí",
+                discarded,
+            )
 
         logger.info(
             "%d/%d chunks válidos tras validación de tokens",
@@ -52,22 +64,38 @@ class EmbeddingService(IEmbeddingService):
             len(request.chunks),
         )
 
-        # 2. Generar embeddings (FastEmbed tokeniza internamente aquí)
-        vectors = self._fastembed.embed(valid_chunks)
-        logger.info("Embeddings generados: %d vectores de dimensión %d", len(vectors), len(vectors[0]))
+        vectors = await asyncio.to_thread(self._fastembed.embed, valid_chunks)
+        logger.info(
+            "Embeddings generados: %d vectores de dimensión %d",
+            len(vectors),
+            len(vectors[0]),
+        )
 
-        # 3. Persistir en Qdrant
-        self._repo.upsert_points(
-            document_id=request.document_id,
-            filename=request.filename,
-            chunks=valid_chunks,
-            chunk_ids=valid_ids,
-            vectors=vectors,
+        await asyncio.to_thread(
+            self._repo.upsert_points,
+            request.document_id,
+            request.filename,
+            valid_chunks,
+            valid_ids,
+            vectors,
         )
 
         return IndexResponse(
             message="Chunks indexados correctamente.",
             document_id=request.document_id,
             chunks_indexed=len(vectors),
-            chunks_discarded=len(request.chunks) - len(valid_chunks),
+            chunks_discarded=discarded,
         )
+
+    async def search(self, query: str, limit: int = 5) -> list[SearchHit]:
+        query_vector = (await asyncio.to_thread(self._fastembed.embed, [query]))[0]
+        results = await asyncio.to_thread(self._repo.search_vectors, query_vector, limit)
+        return [
+            SearchHit(
+                chunk_id=res.get("chunk_id", "unknown"),
+                text=res.get("text", ""),
+                score=res.get("score"),
+                document_id=res.get("document_id"),
+            )
+            for res in results
+        ]

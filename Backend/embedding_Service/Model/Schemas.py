@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+
 class IndexRequest(BaseModel):
     document_id: str
     filename: str
@@ -12,6 +13,13 @@ class IndexResponse(BaseModel):
     document_id: str
     chunks_indexed: int
     chunks_discarded: int = 0
+
+
+class SearchHit(BaseModel):
+    chunk_id: str
+    text: str
+    score: float | None = None
+    document_id: str | None = None
 
 
 Request = IndexRequest
