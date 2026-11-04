@@ -1,15 +1,9 @@
 import logging
 from abc import ABC, abstractmethod
+from indexer_Service.Infra.INERProvider import INERProvider
 
 logger = logging.getLogger(__name__)
 
-
-class INERProvider(ABC):
-
-    @abstractmethod
-    async def extract(self, text: str) -> dict:
-        """Retorna un diccionario con estructura {"entities": [...], "relations": [...]}."""
-        ...
 
 
 class SpacyNERProvider(INERProvider):
@@ -31,6 +25,7 @@ class SpacyNERProvider(INERProvider):
         doc = self._nlp(text)
         entities = []
         for ent in doc.ents:
+            logger.info("Entro en Spacy: %s")
             if ent.text.strip():
                 # spaCy genérico no tiene mapeo a atributos complejos de la ontología,
                 # mapeamos texto y tipo de manera básica.

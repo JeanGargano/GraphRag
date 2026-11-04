@@ -4,7 +4,6 @@ from openai import AsyncOpenAI
 logger = logging.getLogger(__name__)
 
 class LLMClient:
-    #def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", model: str = "llama-3.3-70b-versatile"):
     def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", model: str = "openai/gpt-oss-120b"):
         if not api_key:
             raise ValueError("API Key no configurada para el LLM")

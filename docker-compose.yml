@@ -40,6 +40,9 @@ services:
       - ./Backend/.env
     volumes:
       - ./Backend:/app
+    depends_on:
+      neo4j:
+        condition: service_healthy
 
   frontend:
     build: ./Frontend

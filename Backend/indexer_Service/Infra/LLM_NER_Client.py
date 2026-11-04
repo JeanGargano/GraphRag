@@ -1,7 +1,7 @@
 import logging
 import json
 from openai import AsyncOpenAI
-from indexer_Service.Infra.Spacy_Client import INERProvider
+from indexer_Service.Infra.INERProvider import INERProvider
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class LLMNERProvider(INERProvider):
         """
         Analiza el texto y extrae entidades y relaciones estructuradas de acuerdo con la ontología de UAO.
         """
+        logger.info("Entro en LLM: %s")
         system_prompt = (
             "Eres un experto en extracción de conocimiento y modelado de grafos (GraphRAG). Tu tarea es analizar texto académico y extraer entidades y relaciones siguiendo ESTRICTAMENTE la ontología de la Universidad Autónoma de Occidente.\n\n"
             "### REGLAS DE NORMALIZACIÓN (EVITAR DUPLICADOS):\n"
